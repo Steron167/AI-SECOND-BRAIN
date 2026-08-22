@@ -80,7 +80,7 @@ Write ReAct trace: Thought, Action(tool), Observation, Final Answer. Mention FAL
 
     // FIX: llama-3.3 does NOT force tool calls + explicit system instruction to NOT call tools
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: "You are Chronicle LangGraph orchestrator. DO NOT CALL ANY TOOLS. You already have tool outputs in prompt. Just synthesize answer. If FALLBACK present say 'Tool fallback triggered'. If conflict present say how resolved. Output ReAct format." },
         { role: "user", content: prompt }
