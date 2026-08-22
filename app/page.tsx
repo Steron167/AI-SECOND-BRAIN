@@ -80,9 +80,12 @@ export default function Page() {
             <div className="flex gap-2 mb-4 items-center"><div className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center text-xs font-bold">✓</div><div className="text-[12px] font-extrabold tracking-widest">FINAL ANSWER • MULTI AI AGENT</div><div className="ml-auto text-[10px] px-2.5 py-1 rounded-full bg-white text-black font-bold">Verified • Full Length</div></div>
             <div className="space-y-3">
               {lines.map((line, li) => {
-                if (line.trim().startsWith("|") && line.includes("|")) {
+                // FIXED: detect Aspect | Ayurveda | Modern - no leading |
+                if (line.includes("|") && line.split("|").filter(c=>c.trim()).length >= 2) {
                   const cells = line.split("|").filter(c=>c.trim()).map(c=>cleanCell(c))
-                  if (cells.length===0 || cells[0].includes("---")) return null
+                  if (cells.length < 2) return null
+                  if (cells.every(c => /^[-:\s]+$/.test(c))) return null
+                  if (cells[0].includes("---")) return null
                   return <div key={li} className="grid gap-2" style={{gridTemplateColumns:`repeat(${cells.length}, minmax(0,1fr))`}}>{cells.map((cell, ci)=><div key={ci} className={`px-3 py-2.5 rounded-xl text-[13px] border leading-5 break-words ${ci===0? "bg-zinc-800 text-white border-zinc-700 font-extrabold" : "bg-white text-black border-white font-medium"}`}>{cell}</div>)}</div>
                 }
                 if (!line.trim()) return <div key={li} className="h-2" />
@@ -135,6 +138,13 @@ export default function Page() {
             <div className="bg-[#1c1c1c] rounded-xl p-3 text-center border-2 border-[#2c2c2c]"><div className="text-[9px] font-bold text-zinc-400">STEPS</div><div className="text-[16px] font-extrabold text-white mt-1">{checkpoints.length || 6}</div></div>
           </div>
         </div>
+
+        <div className="mt-6">
+          <div className="text-[10px] tracking-widest text-zinc-500 font-bold mb-2">CHAT + MEMORY</div>
+          <div className="bg-[#151515] rounded-xl p-3 border border-zinc-800 max-h-[200px] overflow-y-auto space-y-2">
+            {chats.map((c,i)=><div key={i} className={`text-[11px] p-2 rounded-lg ${c.role==="user"? "bg-white text-black font-bold" : "bg-zinc-800 text-zinc-300"}`}><span className="font-extrabold">{c.role.toUpperCase()}: </span>{c.text.slice(0,120)}</div>)}
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col">
@@ -165,6 +175,7 @@ export default function Page() {
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask vault..." className="flex-1 bg-transparent px-6 outline-none text-[15px] font-medium text-black" />
             <button onClick={send} className="bg-black text-white px-7 py-3 rounded-full text-[14px] font-extrabold">Send</button>
           </div>
+          <div className="text-center mt-2 text-[10px] text-zinc-500 font-bold">LangGraph Runtime • Chat + Memory Graph • Tools: web_search (fallback) + vault_search</div>
         </div>
       </div>
     </div>
