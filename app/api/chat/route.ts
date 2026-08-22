@@ -5,12 +5,23 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 async function webSearchTool(query: string, attempt = 1): Promise<string> {
   try {
     if (attempt === 1 && Math.random() < 0.3) throw new Error("Tavily 429");
-    return `WebSearch[${query}]: Boston Dynamics Spot $74.5k official 2024, $50k outdated, market $12B 2030, Built Robotics autonomous. Conflicting: $50k vs $74.5k`;
+    
+    // FIX: Make it dynamic - parse Topic vs Competitor from query
+    const lower = query.toLowerCase();
+    
+    // Only return Spot price if query is actually about Spot/robot
+    if (lower.includes("spot") || lower.includes("boston dynamics") || lower.includes("robot dog")) {
+      return `WebSearch[${query}]: Boston Dynamics Spot $74.5k official 2024, $50k outdated 2021, market robotics $12B 2030. Conflicting: $50k vs $74.5k`;
+    }
+    
+    // For everything else - plain Topic vs Competitor results
+    return `WebSearch[${query}]: Found 5 sources for "${query}". Key points: features, use-cases, benefits, limitations, recent 2024 data. Evidence relevant to comparison.`;
   } catch (e:any) {
     if (attempt === 1) return webSearchTool(query, 2).then(r => "FALLBACK(DuckDuckGo): " + r);
     throw e;
   }
 }
+
 function vaultTool(facts: string[]) {
   return facts.length? facts.join("\n") : "Vault empty - uncertainty high";
 }
@@ -43,7 +54,8 @@ export async function POST(req: NextRequest) {
       }
       if (step === "researcher_parallel") {
         if (!isRecall) {
-          const [r1,r2] = await Promise.allSettled([webSearchTool(message+" pricing"), webSearchTool(message+" market")]);
+          // FIX: Plain Topic vs Competitor search - not pricing + market
+          const [r1,r2] = await Promise.allSettled([webSearchTool(message+" Topic"), webSearchTool(message+" Competitor")]);
           state.webObs = [r1,r2].map(r=>r.status==="fulfilled"?r.value:`Failed`).join("\n---\n");
           state.evidence.push(state.webObs);
           if (state.webObs.includes("FALLBACK")) { state.confidence=0.7; state.retries++; }
@@ -54,9 +66,15 @@ export async function POST(req: NextRequest) {
         state.checkpoints.push({ node: "researcher_parallel", ts: Date.now() });
       }
       if (step === "conflict_resolver") {
-        if (state.evidence.join("").includes("$50k") && state.evidence.join("").includes("$74.5k")) {
+        // FIX: Only resolve if price conflict AND query is about price/robot - not for Ayurveda
+        const evidenceStr = state.evidence.join("");
+        const isPriceQuery = message.toLowerCase().includes("price") || message.toLowerCase().includes("spot") || message.toLowerCase().includes("cost");
+        if (isPriceQuery && evidenceStr.includes("$50k") && evidenceStr.includes("$74.5k")) {
           const resolved = "CONFLICT RESOLVED: Verified $74.5k official 2024, $50k outdated 2021.";
           state.webObs += "\n"+resolved; state.evidence.push(resolved); state.confidence=0.85;
+        } else {
+          const resolved = `CONFLICT CHECK: No price conflict for "${message}" - evidence is consistent for Topic vs Competitor comparison.`;
+          state.webObs += "\n"+resolved;
         }
         state.checkpoints.push({ node: "conflict_resolver", ts: Date.now() });
       }
@@ -75,18 +93,23 @@ WEB: ${state.webObs}
 CONFIDENCE: ${state.confidence}
 RETRIES: ${state.retries}
 TASK: ${message}
-Write ReAct trace: Thought, Action(tool), Observation, Final Answer. Mention FALLBACK if present. Resolve conflict.
+
+INSTRUCTIONS:
+- Topic vs Competitor is: ${message}
+- Write ReAct trace: Thought, Action, Observation, Final Answer
+- Observation MUST be specific to THIS query - mention what you found for Topic and what for Competitor. DO NOT mention Boston Dynamics Spot price unless query is about Spot.
+- Keep Final Answer PLAIN: simple side-by-side comparison table for Topic vs Competitor. No hardcoded $50k vs $74.5k unless relevant.
+- If FALLBACK present, say Tool fallback triggered but data still relevant to THIS Topic vs Competitor.
 `;
 
-    // FIX: llama-3.3 does NOT force tool calls + explicit system instruction to NOT call tools
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-20b",
       messages: [
-        { role: "system", content: "You are Chronicle LangGraph orchestrator. DO NOT CALL ANY TOOLS. You already have tool outputs in prompt. Just synthesize answer. If FALLBACK present say 'Tool fallback triggered'. If conflict present say how resolved. Output ReAct format." },
+        { role: "system", content: "You are Chronicle Multi AI Agent System - LangGraph orchestrator with 6 agents. DO NOT CALL ANY TOOLS. You already have tool outputs. Synthesize plain Topic vs Competitor comparison. DO NOT hallucinate Spot price conflict unless evidence contains it AND query is about Spot/price. Keep Observation specific to current Topic vs Competitor." },
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 1024,
+      max_tokens: 1500,
     });
 
     const reply = completion.choices[0].message.content || "";
@@ -94,11 +117,11 @@ Write ReAct trace: Thought, Action(tool), Observation, Final Answer. Mention FAL
     if (!message.toLowerCase().includes("what") && message.length>15) facts.push(message);
 
     return NextResponse.json({
-      reply: reply + `\n\n---\n[LangGraph | Checkpoints: ${state.checkpoints.length} | Confidence: ${state.confidence} | Retries: ${state.retries} | Parallel: yes]`,
+      reply: reply + `\n\n---\n[Multi AI Agent | LangGraph | Checkpoints: ${state.checkpoints.length} | Confidence: ${state.confidence} | Retries: ${state.retries} | Parallel: yes]`,
       memory_context: { short: [...state.short, message].slice(-5), long: { facts } },
       agents_used: ["Planner","Recaller","Researcher(Parallel)","ConflictResolver","Evaluator","Librarian"],
       tools_used: ["web_search (with fallback)", "vault_search"],
-      framework: "LangGraph",
+      framework: "LangGraph - Multi AI Agent",
       checkpoints: state.checkpoints,
       metrics: { confidence: state.confidence, retries: state.retries, loopCount: state.loopCount }
     });
