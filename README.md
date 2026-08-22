@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+ CHRONICLE — AI Second Brain with Multi-Agent Memory | InfraBot Startup Memory System built with Next.js, Groq Llama-3.3 & Vercel. Short-Term (RAM) + Long-Term (Vault) architecture.
 
-## Getting Started
+TEAM MEMBERS
+- YASH SONAR (Team Lead)
+- NILESH KALE (Backend Developer )
+- SAMIKSHA GONDKAR ( Frontend Developer )
+- TANISHKA SHINDE (AI/Research)
 
-First, run the development server:
+  PROBLEM STATEMENT
+-Maintain relevant conversation task context across multiple steps. Demonstrate an approach for managing short-term and/or long-term memory  
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+# ◉ CHRONICLE — Context & Memory
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> An AI Second Brain that never forgets. Built for founders.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+CHRONICLE is a multi-agent memory system that remembers your journey, your ideas, and your startup evolution — like a real second brain.
 
-## Learn More
+Live Demo: https://ai-second-brain-nu.vercel.app/
+---
 
-To learn more about Next.js, take a look at the following resources:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 🧠 Architecture — Multi-Agent Memory System
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Inspired by human brain:
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Agent | Role | Function |
+| :--- | :--- | :--- |
+| **🧠 Scribe** | Sensory Memory | Captures incoming chat instantly |
+| **⚡ Recaller** | Short-Term RAM | Holds last 5 conversations for context |
+| **🗄️ Librarian** | Long-Term Vault | Extracts & archives key facts, ideas, and startup concepts permanently |
+| **💬 Chronicle** | Orchestrator | Uses Groq Llama-3.3-70b to answer using both RAM + Vault |
