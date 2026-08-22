@@ -5,17 +5,12 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 async function webSearchTool(query: string, attempt = 1): Promise<string> {
   try {
     if (attempt === 1 && Math.random() < 0.3) throw new Error("Tavily 429");
-    
-    // FIX: Make it dynamic - parse Topic vs Competitor from query
     const lower = query.toLowerCase();
-    
-    // Only return Spot price if query is actually about Spot/robot
     if (lower.includes("spot") || lower.includes("boston dynamics") || lower.includes("robot dog")) {
-      return `WebSearch[${query}]: Boston Dynamics Spot $74.5k official 2024, $50k outdated 2021, market robotics $12B 2030. Conflicting: $50k vs $74.5k`;
+      return `WebSearch[${query}]: Boston Dynamics Spot $74.5k official 2024, $50k outdated 2021, market robotics $12B 2030.`;
     }
-    
-    // For everything else - plain Topic vs Competitor results
-    return `WebSearch[${query}]: Found 5 sources for "${query}". Key points: features, use-cases, benefits, limitations, recent 2024 data. Evidence relevant to comparison.`;
+    // PLAIN Topic vs Competitor - no hardcoded price
+    return `WebSearch[${query}]: Found relevant sources for "${query}" - features, methodology, benefits, limitations, 2024 data. Suitable for plain Topic vs Competitor comparison.`;
   } catch (e:any) {
     if (attempt === 1) return webSearchTool(query, 2).then(r => "FALLBACK(DuckDuckGo): " + r);
     throw e;
@@ -54,7 +49,6 @@ export async function POST(req: NextRequest) {
       }
       if (step === "researcher_parallel") {
         if (!isRecall) {
-          // FIX: Plain Topic vs Competitor search - not pricing + market
           const [r1,r2] = await Promise.allSettled([webSearchTool(message+" Topic"), webSearchTool(message+" Competitor")]);
           state.webObs = [r1,r2].map(r=>r.status==="fulfilled"?r.value:`Failed`).join("\n---\n");
           state.evidence.push(state.webObs);
@@ -66,14 +60,13 @@ export async function POST(req: NextRequest) {
         state.checkpoints.push({ node: "researcher_parallel", ts: Date.now() });
       }
       if (step === "conflict_resolver") {
-        // FIX: Only resolve if price conflict AND query is about price/robot - not for Ayurveda
         const evidenceStr = state.evidence.join("");
-        const isPriceQuery = message.toLowerCase().includes("price") || message.toLowerCase().includes("spot") || message.toLowerCase().includes("cost");
+        const isPriceQuery = message.toLowerCase().includes("price") || message.toLowerCase().includes("spot");
         if (isPriceQuery && evidenceStr.includes("$50k") && evidenceStr.includes("$74.5k")) {
-          const resolved = "CONFLICT RESOLVED: Verified $74.5k official 2024, $50k outdated 2021.";
+          const resolved = "CONFLICT RESOLVED: Verified $74.5k official 2024, $50k outdated.";
           state.webObs += "\n"+resolved; state.evidence.push(resolved); state.confidence=0.85;
         } else {
-          const resolved = `CONFLICT CHECK: No price conflict for "${message}" - evidence is consistent for Topic vs Competitor comparison.`;
+          const resolved = `CONFLICT CHECK: No price conflict for "${message}" - evidence consistent for Topic vs Competitor.`;
           state.webObs += "\n"+resolved;
         }
         state.checkpoints.push({ node: "conflict_resolver", ts: Date.now() });
@@ -91,25 +84,23 @@ EVIDENCE: ${state.evidence.join("\n---\n")}
 VAULT: ${state.vaultObs}
 WEB: ${state.webObs}
 CONFIDENCE: ${state.confidence}
-RETRIES: ${state.retries}
 TASK: ${message}
 
-INSTRUCTIONS:
-- Topic vs Competitor is: ${message}
-- Write ReAct trace: Thought, Action, Observation, Final Answer
-- Observation MUST be specific to THIS query - mention what you found for Topic and what for Competitor. DO NOT mention Boston Dynamics Spot price unless query is about Spot.
-- Keep Final Answer PLAIN: simple side-by-side comparison table for Topic vs Competitor. No hardcoded $50k vs $74.5k unless relevant.
-- If FALLBACK present, say Tool fallback triggered but data still relevant to THIS Topic vs Competitor.
+RULES:
+- This is Topic vs Competitor: ${message}
+- Observation must be specific to THIS Topic vs Competitor - what you found for Topic and what for Competitor. No Spot price unless query is about Spot.
+- Final Answer: Plain table: Aspect | Topic | Competitor - NO **, NO asterisks, NO markdown bold. Write plain like Core Philosophy not **Core Philosophy**.
+- Write full length ReAct trace: Thought, Action, Observation, Final Answer.
 `;
 
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-20b",
       messages: [
-        { role: "system", content: "You are Chronicle Multi AI Agent System - LangGraph orchestrator with 6 agents. DO NOT CALL ANY TOOLS. You already have tool outputs. Synthesize plain Topic vs Competitor comparison. DO NOT hallucinate Spot price conflict unless evidence contains it AND query is about Spot/price. Keep Observation specific to current Topic vs Competitor." },
+        { role: "system", content: "You are Chronicle Multi AI Agent System - LangGraph with 6 agents. DO NOT CALL TOOLS. You have evidence. CRITICAL: In table output, NEVER use ** or * or __. Write plain text only. Example: Core Philosophy not **Core Philosophy**. Keep Topic vs Competitor plain. Full length answer." },
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 1500,
+      max_tokens: 1800,
     });
 
     const reply = completion.choices[0].message.content || "";
@@ -117,7 +108,7 @@ INSTRUCTIONS:
     if (!message.toLowerCase().includes("what") && message.length>15) facts.push(message);
 
     return NextResponse.json({
-      reply: reply + `\n\n---\n[Multi AI Agent | LangGraph | Checkpoints: ${state.checkpoints.length} | Confidence: ${state.confidence} | Retries: ${state.retries} | Parallel: yes]`,
+      reply: reply,
       memory_context: { short: [...state.short, message].slice(-5), long: { facts } },
       agents_used: ["Planner","Recaller","Researcher(Parallel)","ConflictResolver","Evaluator","Librarian"],
       tools_used: ["web_search (with fallback)", "vault_search"],
@@ -128,7 +119,7 @@ INSTRUCTIONS:
 
   } catch (err:any) {
     return NextResponse.json({
-      reply: `RECOVERY MODE: Final fallback after error ${err.message}. Vault: ${state.vaultObs}`,
+      reply: `RECOVERY MODE: Fallback after error ${err.message}. Vault: ${state.vaultObs}`,
       memory_context: memory,
       error_recovered: true,
       checkpoints: state.checkpoints,
