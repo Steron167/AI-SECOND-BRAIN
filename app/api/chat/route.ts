@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     const groq = getGroq();
 const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: "You are Chronicle 6-agent orchestrator. Evidence already provided. DO NOT call tools. Output ReAct as text only. NEVER JSON tool calls. Table format: Aspect | Topic | Competitor lines, no **." },
         { role: "user", content: prompt },
