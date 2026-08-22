@@ -16,9 +16,9 @@ TEAM MEMBERS
 
 CHRONICLE is a multi-agent memory system that remembers your journey, your ideas, and your startup evolution — like a real second brain.
 
-Live Demo: https://ai-second-brain-nu.vercel.app/
-
 EVALUATION PAGE: https://ai-second-brain-nu.vercel.app/evaluation
+
+Live Demo: https://ai-second-brain-nu.vercel.app/
 ---
 
 
