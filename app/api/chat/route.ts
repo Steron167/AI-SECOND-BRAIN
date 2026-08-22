@@ -1,42 +1,58 @@
-import { NextRequest, NextResponse } from 'next/server'
-import Groq from 'groq-sdk'
+import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
 
-let memory = {
-  short: [] as any[],
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+
+// Simple in-memory store (Vercel keeps it for a while)
+let globalMemory = {
+  short: [] as string[],
   long: { facts: [] as string[] }
-}
+};
 
 export async function POST(req: NextRequest) {
-  const { message } = await req.json()
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+  const { message } = await req.json();
+  const lower = message.toLowerCase();
 
-  const past = memory.long.facts.slice(-5).join("\n") || "No facts yet"
-  const short = memory.short.slice(-3).map((m:any)=> m.text).join("\n") || "No recent"
+  // Add to short-term
+  globalMemory.short.push(message);
+  if(globalMemory.short.length > 5) globalMemory.short.shift();
 
-  const completion = await groq.chat.completions.create({
+  // Save to long-term if it's an idea/fact
+  const isIdea = lower.includes("robotic") || lower.includes("infrastructure") || lower.includes("my startup") || lower.includes("idea is") || lower.length > 15;
+  if(isIdea &&!lower.startsWith("whats my") &&!lower.startsWith("what is my")) {
+    if(!globalMemory.long.facts.includes(message)){
+      globalMemory.long.facts.push(message);
+    }
+  }
+
+  // Check if user is asking to recall
+  const isRecall = lower.includes("whats my") || lower.includes("what is my") || lower.includes("my startup idea");
+
+  let systemPrompt = `You are Chronicle, a memory assistant with 3 agents: Scribe, Librarian, Recaller.
+  SHORT-TERM: ${JSON.stringify(globalMemory.short)}
+  LONG-TERM VAULT: ${JSON.stringify(globalMemory.long.facts)}
+
+  Rules:
+    - If user shares a startup idea, acknowledge and save it.
+    - If user asks "whats my startup idea?" you MUST answer from LONG-TERM VAULT exactly. Don't say you don't have it if vault has data.
+  `;
+
+  if(isRecall){
+    systemPrompt += ` User is asking to recall. Answer from LONG-TERM VAULT: ${globalMemory.long.facts.join(", ") || "Vault empty"}. If vault has "robotic use in insfrastructure buildiing", explain it as InfraBot concept.`;
+  }
+
+  const chatCompletion = await groq.chat.completions.create({
     model: "openai/gpt-oss-20b",
     messages: [
-      {
-        role: "system",
-        content: `You are CHRONICLE Second Brain.
-LONG-TERM VAULT:
-${past}
-SHORT-TERM RAM:
-${short}
-Rule: If user asks about startup idea, answer from LONG-TERM. Be concise, like co-founder.`
-      },
+      { role: "system", content: systemPrompt },
       { role: "user", content: message }
-    ]
-  })
+    ],
+  });
 
-  const reply = completion.choices[0].message.content
-
-  memory.short.push({ text: message })
-  if (memory.short.length > 3) memory.short.shift()
-  memory.long.facts.push(message)
+  const reply = chatCompletion.choices[0].message.content;
 
   return NextResponse.json({
     reply,
-    memory_context: memory
-  })
+    memory_context: globalMemory
+  });
 }
