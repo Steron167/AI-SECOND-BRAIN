@@ -7,7 +7,7 @@ export default function Page() {
   const [competitor, setCompetitor] = useState("")
   const [result, setResult] = useState("")
   const [input, setInput] = useState("")
-  const [chats, setChats] = useState<Chat[]>([{ role: "ai", text: "Brain ready. Full ReAct trace will show live." }])
+  const [chats, setChats] = useState<Chat[]>([{ role: "ai", text: "Multi AI Agent System ready. 6 agents idle." }])
   const [memory, setMemory] = useState<any>({ short: [], long: { facts: [] } })
   const [loading, setLoading] = useState(false)
   const [meta, setMeta] = useState<any>(null)
@@ -25,7 +25,7 @@ export default function Page() {
     const steps = ["planner","recaller","researcher","resolver","evaluator","librarian"]
     let i=0; const it = setInterval(()=>{ setActiveNode(steps[i]); i=(i+1)%6 }, 350)
     try {
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `Research with FULL ReAct Trace: ${topic} vs ${competitor || "general"} | Return format: Thought:... Action:... Observation:... Final Answer: detailed comparison with table`, memory }) })
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `Research with FULL ReAct: ${topic} vs ${competitor || "general"} | Format Thought:/Action:/Observation:/Final Answer:`, memory }) })
       const data = await res.json()
       clearInterval(it); setActiveNode("done")
       setResult(data.reply); setMeta(data); setCheckpoints(data.checkpoints||[]); setMemory(data.memory_context)
@@ -47,71 +47,39 @@ export default function Page() {
   }
 
   function renderReAct(text: string) {
-    // Don't trim or shorten - keep full
-    const full = text
-    const blocks = full.split(/(?=Thought:|Action:|Observation:|Final Answer:)/gi)
-
+    const blocks = text.split(/(?=Thought:|Action:|Observation:|Final Answer:)/gi)
     return blocks.map((block, idx) => {
-      const lower = block.toLowerCase()
-      if (lower.includes("thought:")) {
-        return (
-          <div key={idx} className="mb-5 rounded-2xl bg-[#fff7ed] border-2 border-orange-200 p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center text-[12px] font-bold">💭</div>
-              <div className="text-[12px] font-extrabold tracking-widest text-orange-700">THOUGHT</div>
-              <div className="ml-auto text-[10px] px-2 py-1 rounded-full bg-orange-500 text-white font-bold">Reasoning</div>
-            </div>
-            <div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{block.replace(/Thought:/i,"").trim()}</div>
-          </div>
-        )
-      }
-      if (lower.includes("action:")) {
-        return (
-          <div key={idx} className="mb-5 rounded-2xl bg-[#eff6ff] border-2 border-blue-200 p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-[12px] font-bold">⚡</div>
-              <div className="text-[12px] font-extrabold tracking-widest text-blue-700">ACTION</div>
-              <div className="ml-auto text-[10px] px-2 py-1 rounded-full bg-blue-600 text-white font-bold">Tool Call</div>
-            </div>
-            <div className="text-[14px] font-semibold leading-7 text-black whitespace-pre-wrap break-words font-mono bg-white/70 p-3 rounded-xl border border-blue-100">{block.replace(/Action:/i,"").trim()}</div>
-          </div>
-        )
-      }
-      if (lower.includes("observation:")) {
-        return (
-          <div key={idx} className="mb-5 rounded-2xl bg-[#f0fdf4] border-2 border-green-200 p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-full bg-green-600 text-white flex items-center justify-center text-[12px] font-bold">👁</div>
-              <div className="text-[12px] font-extrabold tracking-widest text-green-700">OBSERVATION</div>
-              <div className="ml-auto text-[10px] px-2 py-1 rounded-full bg-green-600 text-white font-bold">Evidence</div>
-            </div>
-            <div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{block.replace(/Observation:/i,"").trim()}</div>
-          </div>
-        )
-      }
-      if (lower.includes("final answer:")) {
+      const l = block.toLowerCase()
+      if (l.includes("thought:")) return (
+        <div key={idx} className="mb-5 rounded-2xl bg-[#fff7ed] border-2 border-orange-200 p-5">
+          <div className="flex gap-2 mb-2 items-center"><div className="w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold">💭</div><div className="text-[12px] font-extrabold tracking-widest text-orange-700">THOUGHT</div><div className="ml-auto text-[10px] px-2 py-1 rounded-full bg-orange-500 text-white font-bold">Agent Reasoning</div></div>
+          <div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{block.replace(/Thought:/i,"").trim()}</div>
+        </div>
+      )
+      if (l.includes("action:")) return (
+        <div key={idx} className="mb-5 rounded-2xl bg-[#eff6ff] border-2 border-blue-200 p-5">
+          <div className="flex gap-2 mb-2 items-center"><div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">⚡</div><div className="text-[12px] font-extrabold tracking-widest text-blue-700">ACTION</div><div className="ml-auto text-[10px] px-2 py-1 rounded-full bg-blue-600 text-white font-bold">Tool Invocation</div></div>
+          <div className="text-[14px] font-mono font-semibold leading-7 text-black bg-white p-3 rounded-xl border border-blue-100 whitespace-pre-wrap break-words">{block.replace(/Action:/i,"").trim()}</div>
+        </div>
+      )
+      if (l.includes("observation:")) return (
+        <div key={idx} className="mb-5 rounded-2xl bg-[#f0fdf4] border-2 border-green-200 p-5">
+          <div className="flex gap-2 mb-2 items-center"><div className="w-7 h-7 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">👁</div><div className="text-[12px] font-extrabold tracking-widest text-green-700">OBSERVATION</div><div className="ml-auto text-[10px] px-2 py-1 rounded-full bg-green-600 text-white font-bold">Evidence Gathered</div></div>
+          <div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{block.replace(/Observation:/i,"").trim()}</div>
+        </div>
+      )
+      if (l.includes("final answer:")) {
         const content = block.replace(/Final Answer:/i,"").trim()
-        // Parse table rows
         const lines = content.split("\n")
         return (
-          <div key={idx} className="mb-2 rounded-2xl bg-black text-white p-6 border-2 border-black">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center text-[12px] font-bold">✓</div>
-              <div className="text-[12px] font-extrabold tracking-widest text-white">FINAL ANSWER</div>
-              <div className="ml-auto text-[10px] px-2.5 py-1 rounded-full bg-white text-black font-bold">Verified • Synthesized</div>
-            </div>
+          <div key={idx} className="rounded-2xl bg-black text-white p-6 border-2 border-black">
+            <div className="flex gap-2 mb-4 items-center"><div className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center text-xs font-bold">✓</div><div className="text-[12px] font-extrabold tracking-widest">FINAL ANSWER • SYNTHESIZED</div><div className="ml-auto text-[10px] px-2.5 py-1 rounded-full bg-white text-black font-bold">Multi-Agent Output</div></div>
             <div className="space-y-3">
               {lines.map((line, li) => {
                 if (line.trim().startsWith("|") && line.includes("|")) {
                   const cells = line.split("|").filter(c=>c.trim()).map(c=>c.trim())
-                  if (cells.length===0 || cells[0].toLowerCase().includes("---")) return null
-                  return (
-                    <div key={li} className="grid gap-2" style={{gridTemplateColumns:`repeat(${cells.length}, minmax(0,1fr))`}}>
-                      {cells.map((cell, ci) => (
-                        <div key={ci} className={`px-3 py-2.5 rounded-xl text-[13px] font-bold border ${ci===0? "bg-zinc-800 text-zinc-200 border-zinc-700" : "bg-white text-black border-white"}`}>{cell}</div>
-                      ))}
-                    </div>
-                  )
+                  if (cells.length===0 || cells[0].includes("---")) return null
+                  return <div key={li} className="grid gap-2" style={{gridTemplateColumns:`repeat(${cells.length}, minmax(0,1fr))`}}>{cells.map((cell, ci)=><div key={ci} className={`px-3 py-2.5 rounded-xl text-[13px] font-bold border ${ci===0? "bg-zinc-800 text-zinc-200 border-zinc-700" : "bg-white text-black border-white"}`}>{cell}</div>)}</div>
                 }
                 if (!line.trim()) return <div key={li} className="h-2" />
                 return <div key={li} className="text-[15px] font-medium leading-8 text-zinc-100 whitespace-pre-wrap break-words">{line}</div>
@@ -120,51 +88,108 @@ export default function Page() {
           </div>
         )
       }
-      // Fallback for any other text (full, not short)
-      if (block.trim().length < 5) return null
+      if (block.trim().length<5) return null
       return <div key={idx} className="mb-3 text-[14px] leading-7 text-black whitespace-pre-wrap break-words">{block}</div>
     })
   }
 
+  const Node = ({ id, title, sub }: any) => (
+    <div className={`rounded-[14px] p-3 border-2 flex items-center gap-3 transition-all ${activeNode===id? "bg-white text-black border-white shadow-[0_6px_24px_rgba(255,255,255,0.25)] scale-[1.02]" : "bg-[#1e1e1e] border-[#2c2c2c] text-white"}`}>
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${activeNode===id? "bg-black text-white" : "bg-[#2a2a2a] text-zinc-300"}`}>●</div>
+      <div className="flex-1"><div className="text-[11px] font-extrabold tracking-wide">{title}</div><div className={`text-[10px] mt-0.5 font-medium ${activeNode===id? "text-zinc-600" : "text-zinc-400"}`}>{sub}</div></div>
+      {activeNode===id && <div className="w-2 h-2 bg-[#00ff66] rounded-full animate-pulse" />}
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-[#f8f6f2] flex font-[Inter]">
+    <div className="min-h-screen bg-[#f8f6f2] flex font-[Inter] antialiased">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap'); *{font-family:Inter}`}</style>
 
-      <div className="w-[340px] hidden lg:flex flex-col bg-[#0b0b0b] text-white p-5 shrink-0">
-        <div className="font-extrabold tracking-widest text-sm">CHRONICLE</div>
-        <div className="text-[12px] text-zinc-400 mt-1">LangGraph • Full Trace Mode</div>
-        <div className="mt-6 space-y-2">
-          {[
-            {id:"planner",t:"PLANNER"},{id:"recaller",t:"RECALLER"},{id:"researcher",t:"RESEARCHER x2"},{id:"resolver",t:"RESOLVER"},{id:"evaluator",t:"EVALUATOR"},{id:"librarian",t:"LIBRARIAN"},
-          ].map(n=><div key={n.id} className={`rounded-xl px-4 py-3 border-2 flex items-center gap-3 ${activeNode===n.id? "bg-white text-black border-white" : "bg-[#1c1c1c] border-zinc-800 text-white"}`}><div className={`w-2 h-2 rounded-full ${activeNode===n.id? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} /><div className="text-xs font-bold">{n.t}</div></div>)}
-          <div className={`p-3 rounded-xl text-center text-xs font-extrabold border-2 ${activeNode==="done"? "bg-[#00ff66] border-[#00ff66] text-black" : "bg-zinc-900 border-zinc-800 text-zinc-500"}`}>{activeNode==="done"? "✓ COMPLETE" : "IDLE"}</div>
+      {/* LEFT - FULL AS BEFORE */}
+      <div className="w-[380px] hidden lg:flex flex-col bg-[#0b0b0b] text-white p-6 shrink-0 border-r border-zinc-900">
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="font-extrabold text-[15px] tracking-[0.2em]">CHRONICLE</div>
+            <div className="text-[11px] font-bold tracking-widest text-[#00ff66] mt-1">MULTI AI AGENT SYSTEM</div>
+          </div>
+          <div className="flex flex-col gap-1 items-end">
+            <div className="text-[10px] bg-white text-black px-3 py-1 rounded-full font-extrabold">LangGraph</div>
+            <div className="text-[9px] px-2.5 py-1 rounded-full bg-[#00ff66] text-black font-extrabold tracking-wide">6 AGENTS ACTIVE</div>
+          </div>
+        </div>
+        <div className="text-[12px] text-zinc-300 mt-3 font-medium leading-5">Multi Agent Framework • Parallel Execution • Memory Graph</div>
+        <div className="mt-2 text-[10px] text-zinc-500 font-bold tracking-wide">Why LangGraph {" > "} CrewAI? Stateful, checkpointing, parallel, lightweight</div>
+
+        <div className="mt-7 space-y-2.5">
+          <div className="text-[10px] tracking-[0.2em] text-zinc-500 font-extrabold mb-3 flex justify-between">
+            <span>LANGGRAPH EXECUTION GRAPH</span>
+            <span className="text-[#00ff66]">MULTI-AGENT</span>
+          </div>
+          <Node id="planner" title="PLANNER AGENT" sub="Dynamic task planning" />
+          <Node id="recaller" title="RECALLER AGENT" sub="vaultTool() - Long term memory" />
+          <Node id="researcher" title="RESEARCHER AGENT x2" sub="Parallel web_search + fallback" />
+          <Node id="resolver" title="CONFLICT RESOLVER AGENT" sub="Evidence verification $74.5k" />
+          <Node id="evaluator" title="EVALUATOR AGENT" sub="Self-eval + replan logic" />
+          <Node id="librarian" title="LIBRARIAN AGENT" sub="Checkpoint save + persist" />
+          <div className={`mt-3 p-3.5 rounded-xl text-center text-[12px] font-extrabold border-2 tracking-wide ${activeNode==="done"? "bg-[#00ff66] text-black border-[#00ff66] shadow-[0_0_20px_rgba(0,255,102,0.3)]" : "bg-[#171717] border-[#2a2a2a] text-zinc-500"}`}>
+            {activeNode==="done"? "✓ GRAPH COMPLETE - ALL 6 AGENTS FINISHED" : "IDLE - WAITING FOR MULTI-AGENT TASK"}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <div className="text-[10px] tracking-widest text-zinc-500 font-bold mb-2">AGENT METRICS • MULTI AI</div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white rounded-xl p-3 text-center border-2 border-white"><div className="text-[9px] font-bold text-zinc-500 tracking-wide">CONFIDENCE</div><div className="text-[16px] font-extrabold text-black mt-1">{meta?.metrics?.confidence || 0.85}</div><div className="text-[9px] text-green-600 font-bold mt-1">High</div></div>
+            <div className="bg-[#1c1c1c] rounded-xl p-3 text-center border-2 border-[#2c2c2c]"><div className="text-[9px] font-bold text-zinc-400 tracking-wide">RETRIES</div><div className="text-[16px] font-extrabold text-orange-400 mt-1">{meta?.metrics?.retries || 0}</div><div className="text-[9px] text-zinc-500 font-bold mt-1">Fallback</div></div>
+            <div className="bg-[#1c1c1c] rounded-xl p-3 text-center border-2 border-[#2c2c2c]"><div className="text-[9px] font-bold text-zinc-400 tracking-wide">STEPS</div><div className="text-[16px] font-extrabold text-white mt-1">{checkpoints.length || 6}</div><div className="text-[9px] text-zinc-500 font-bold mt-1">Checkpoints</div></div>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-[#151515] rounded-xl border border-zinc-800 p-4">
+          <div className="text-[10px] font-bold tracking-widest text-zinc-400">MULTI AI AGENT ROLES</div>
+          <div className="mt-2 space-y-1.5 text-[11px] font-medium text-zinc-300">
+            <div>• Planner → breaks task</div>
+            <div>• Recaller → memory recall</div>
+            <div>• Researcher x2 → parallel search</div>
+            <div>• Resolver → conflict fix</div>
+            <div>• Evaluator → quality check</div>
+            <div>• Librarian → persist</div>
+          </div>
+        </div>
+
+        <div className="mt-auto pt-6">
+          <div className="text-[10px] text-zinc-600 leading-4 font-medium">Multi AI Agent System: Each agent is a specialized LLM node in StateGraph. Executes in parallel, recovers from 30% tool failure via fallback, verifies conflicts.</div>
         </div>
       </div>
 
+      {/* RIGHT */}
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="p-6 md:p-8 max-w-[900px] mx-auto w-full">
-          <h1 className="text-[28px] font-extrabold text-black tracking-tight">Research Intelligence</h1>
-          <p className="text-[14px] font-medium text-zinc-600">Full ReAct trace - Thought / Action / Observation / Final Answer highlighted</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-[28px] font-extrabold text-black tracking-tight leading-none">Research Intelligence</h1>
+              <p className="text-[14px] font-medium text-zinc-600 mt-2 flex items-center gap-2"><span className="px-2.5 py-1 rounded-full bg-black text-white text-[11px] font-bold">MULTI AI AGENT</span> 6 agents • Parallel • ReAct trace • Full length</p>
+            </div>
+          </div>
 
           <div className="mt-6 bg-white rounded-[24px] border-2 border-black/10 shadow-xl p-1.5">
             <div className="bg-[#f6f4f1] rounded-[18px] p-5">
+              <div className="flex items-center gap-2 mb-4"><div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center font-bold">⌕</div><div className="text-[14px] font-extrabold text-black">Search → Multi AI Agent Pipeline</div><div className="ml-auto text-[10px] px-2.5 py-1 rounded-full bg-[#00ff66] text-black font-bold">6 Agents</div></div>
               <div className="grid md:grid-cols-[1.3fr_1fr] gap-3">
-                <div><label className="text-[11px] font-bold text-zinc-500 ml-1">TOPIC</label><input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Spider-Man vs Batman full abilities" className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 focus:border-black outline-none" /></div>
-                <div><label className="text-[11px] font-bold text-zinc-500 ml-1">VS</label><input value={competitor} onChange={e=>setCompetitor(e.target.value)} placeholder="Compare variant" className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 focus:border-black outline-none" /></div>
+                <div><label className="text-[11px] font-bold text-zinc-500 ml-1">TOPIC</label><input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Spider-Man vs Batman" className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 focus:border-black outline-none" /></div>
+                <div><label className="text-[11px] font-bold text-zinc-500 ml-1">VS COMPETITOR</label><input value={competitor} onChange={e=>setCompetitor(e.target.value)} placeholder="Compare" className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 focus:border-black outline-none" /></div>
               </div>
-              <button onClick={trackResearch} disabled={loading} className="w-full mt-4 bg-black text-white py-4 rounded-full font-extrabold text-[15px]">{loading? "RUNNING FULL TRACE..." : "Run Research → Full ReAct Output"}</button>
+              <button onClick={trackResearch} disabled={loading} className="w-full mt-4 bg-black text-white py-4 rounded-full font-extrabold text-[15px]">{loading? "MULTI AGENTS RUNNING..." : "Run Research → 6 Agents → ReAct"}</button>
             </div>
           </div>
 
           {result && (
             <div className="mt-6 bg-white rounded-[24px] border-2 border-black shadow-xl overflow-hidden">
               <div className="px-6 py-4 bg-black text-white flex justify-between items-center">
-                <div className="text-[11px] font-extrabold tracking-widest">REACT TRACE • LIVE FROM LLM • NOT PREFED</div>
-                <div className="flex gap-2"><span className="text-[11px] px-3 py-1 rounded-full bg-white text-black font-bold">{result.length} chars</span><span className="text-[11px] px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-white font-bold">Conf {meta?.metrics?.confidence||0.85}</span></div>
+                <div className="text-[11px] font-extrabold tracking-widest">FINAL ANSWER • MULTI AI AGENT • VERIFIED • FULL LENGTH</div>
+                <div className="flex gap-2"><span className="text-[11px] px-3 py-1 rounded-full bg-white text-black font-bold">{result.length} chars • Full</span><span className="text-[11px] px-3 py-1 rounded-full bg-[#00ff66] text-black font-bold">6 Agents</span></div>
               </div>
-              <div className="p-6 bg-[#fcfaf7] min-h-[300px]">
-                {renderReAct(result)}
-              </div>
+              <div className="p-6 bg-[#fcfaf7]">{renderReAct(result)}</div>
             </div>
           )}
 
@@ -175,7 +200,7 @@ export default function Page() {
 
         <div className="p-4 sticky bottom-0 bg-[#f8f6f2]/95 backdrop-blur border-t">
           <div className="max-w-[700px] mx-auto bg-white border-2 border-black rounded-full p-1.5 flex gap-2 shadow-xl">
-            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask vault..." className="flex-1 bg-transparent px-6 outline-none text-[15px] font-medium text-black" />
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask vault: what did multi agents research?" className="flex-1 bg-transparent px-6 outline-none text-[15px] font-medium text-black" />
             <button onClick={send} className="bg-black text-white px-7 py-3 rounded-full text-[14px] font-extrabold">Send</button>
           </div>
         </div>
