@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { tracer } from "../../../lib/tracing";
+import { tracer } from "@/lib/tracing";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+const getGroq = () => new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build" });
 
 async function webSearchTool(query: string, attempt = 1): Promise<string> {
   try {
@@ -93,7 +93,8 @@ export async function POST(req: NextRequest) {
   try {
     const prompt = `TASK: ${message}\nEVIDENCE: ${state.evidence.join("\n---\n")}\nWrite ONLY ReAct format:\nThought: reasoning about ${message}\nAction: what tools WOULD be used (describe only)\nObservation: evidence for Topic and Competitor for ${message}\nFinal Answer: \nAspect | Topic | Competitor\nCore Philosophy | ... | ...\nMethodology | ... | ...\nFull length plain text, NO **, NO asterisks.\nIf FALLBACK present mention it.`;
 
-    const completion = await groq.chat.completions.create({
+    const groq = getGroq();
+const completion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [
         { role: "system", content: "You are Chronicle 6-agent orchestrator. Evidence already provided. DO NOT call tools. Output ReAct as text only. NEVER JSON tool calls. Table format: Aspect | Topic | Competitor lines, no **." },
