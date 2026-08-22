@@ -95,3 +95,4 @@ npm install
 npm run dev
 
 TAVILY_API_KEY=xxx
+GROG_API_KEY=xxx
