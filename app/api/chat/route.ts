@@ -55,7 +55,7 @@ Answer helpfully and concisely. Do NOT use Thought/Action/Final Answer format. N
     }
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: isResearch? "You are Chronicle research orchestrator." : "You are helpful assistant." },
         { role: "user", content: prompt }
