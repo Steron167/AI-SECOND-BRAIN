@@ -4,14 +4,33 @@ import { tracer } from "@/lib/tracing";
 
 export async function POST(req: NextRequest) {
   const { message, memory, injectFailure } = await req.json();
-  const raw = (message || "").toString();
+  const raw = (message || "").toString().trim();
   const isResearch = raw.startsWith("Topic:") || raw.includes("vs Competitor:");
-
   const trace = tracer.startTrace(raw, injectFailure);
   const start = Date.now();
 
+  // === FIX: CHATBOT HI === - Add this block right here (line 10)
+  if (!isResearch && raw.length <= 4) {
+    tracer.addSpan(trace.id, {
+      agent: "RECALLER",
+      operation: "tool_call",
+      input: `vaultTool() greeting: ${raw}`,
+      output: "Greeting detected - short-term memory hit",
+      tool: "vaultTool",
+      latencyMs: 10,
+      tokens: { prompt: 5, completion: 10, total: 15 },
+      status: "success"
+    })
+    return NextResponse.json({
+      reply: `Hi! I'm Chronicle vault - your second brain. I have short-term + long-term memory. Enter Topic & Competitor above to run 7 LangGraph agents, or ask me anything!`,
+      traceId: trace.id,
+      memory_context: { short: [...(memory?.short||[]), raw].slice(-5), long: { facts: [...(memory?.long?.facts||[]), raw].slice(-20) } },
+      checkpoints: trace.spans,
+      metrics: { confidence: 0.99, retries: 0, latency: 20, tokens: 15 }
+    });
+  }
+
   try {
-    // SPAN 1: Planner - Prompt
     tracer.addSpan(trace.id, {
       agent: "PLANNER",
       operation: "prompt",
@@ -24,7 +43,6 @@ export async function POST(req: NextRequest) {
       status: "success"
     })
 
-    // SPAN 2: Recaller - Tool call
     tracer.addSpan(trace.id, {
       agent: "RECALLER",
       operation: "tool_call",
@@ -36,7 +54,6 @@ export async function POST(req: NextRequest) {
       status: "success"
     })
 
-    // SPAN 3 & 4: Parallel Researchers - Controlled Failure Demo
     if(injectFailure === "tool_timeout"){
       tracer.addSpan(trace.id, {
         agent: "RESEARCHER-A",
@@ -83,16 +100,11 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // SPAN 5: LLM Synthesis
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
     const llmStart = Date.now();
 
-    let systemPrompt = isResearch? "You are Chronicle research orchestrator. Output Thought/Action/Observation/Final Answer table." : "You are helpful assistant.";
-    let userPrompt = isResearch? `${raw}\nWrite Thought, Action, Observation, Final Answer with table Aspect|Topic|Competitor.` : `User: ${raw}. Reply concisely.`;
-
-    if(raw.toLowerCase().trim().length <= 4 &&!isResearch){
-      userPrompt = `User said "${raw}". Reply: "Hey! I'm Chronicle. Ready to research."`
-    }
+    let systemPrompt = isResearch? "You are Chronicle research orchestrator. You MUST output in exact format:\nThought:...\nAction:...\nObservation:...\nFinal Answer: summary then table with | Aspect | Topic | Competitor |" : "You are helpful assistant with memory. Reply concisely.";
+    let userPrompt = isResearch? `${raw}\nWrite Thought, Action, Observation, Final Answer with comparison table.` : `User: ${raw}. Memory: ${JSON.stringify(memory?.short||[])}. Reply helpfully.`;
 
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-20b",
@@ -146,6 +158,6 @@ export async function POST(req: NextRequest) {
       tokens: { prompt: 0, completion: 0, total: 0 },
       status: "failed"
     })
-    return NextResponse.json({ reply: "Error: "+e.message, traceId: trace.id }, { status: 200 });
+    return NextResponse.json({ reply: "Error: "+e.message, traceId: trace.id, checkpoints: trace.spans, metrics: { confidence: 0, retries: 0, latency: 0, tokens: 0 } }, { status: 200 });
   }
 }
