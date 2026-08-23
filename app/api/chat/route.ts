@@ -64,43 +64,38 @@ export async function POST(req: NextRequest) {
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
     const llmStart = Date.now();
 
+    // FIXED PROMPT - no more "that includes a summary..." clutter
     const topicName = raw.split("vs")[0].replace("Topic:","").trim() || "Topic"
     const compName = raw.split("Competitor:")[1]?.split("-")[0]?.trim() || raw.split("vs")[1]?.trim() || "Competitor"
 
     let systemPrompt = isResearch
-    ? `You are Chronicle LangGraph research orchestrator. Output in EXACT format.
+     ? `You are a concise comparison expert. Output ONLY in this format, no extra meta talk.
 
-REQUIREMENTS FOR RICH CONTENT:
-- Thought: 2-3 detailed sentences explaining your reasoning. Mention you will decompose into 6 aspects: Philosophy, Performance, Features, Pricing, Ecosystem, Best For and why.
-- Action: List actual tools with realistic inputs like web_search(${topicName} specs 2025), web_search(${compName} specs 2025), vaultTool(recall), parallel execution.
-- Observation: 2-3 sentences with actual findings and differences.
-- Final Answer: 2-3 line conclusion, then table. Table cells 12-15 words, detailed but clean.
-
-FORMAT:
-Thought: I need to compare ${topicName} vs ${compName} for a buyer decision. I will decompose into 6 key aspects: Philosophy (brand DNA), Performance (engine/handling), Features (tech/safety), Pricing (value), Ecosystem (service/resale), Best For (target user). This covers emotional and practical factors for a fair comparison.
-Action: web_search(${topicName} 2025 lineup specs and performance) + web_search(${compName} 2025 tech and pricing comparison) + vaultTool(recall long-term memory) + parallel research execution with fallback to cached knowledge
-Observation: Web search shows ${topicName} is positioned as premium performance-focused with higher pricing and strong ecosystem, while ${compName} emphasizes balanced comfort, practical tech and accessible value. Vault recall indicates user has compared similar products before. Evidence is sufficient for structured comparison.
-Final Answer: ${topicName} focuses on performance and ecosystem strength with premium pricing, while ${compName} offers balanced value, comfort and lower cost. Choice depends on whether you prioritize sportiness and brand ecosystem vs everyday practicality and budget.
+FORMAT EXAMPLE:
+Thought: I will compare ${topicName} vs ${compName} across 6 key aspects using web search.
+Action: web_search ${topicName} specs, web_search ${compName} specs, vaultTool recall
+Observation: Both products found, specs collected for fair comparison.
+Final Answer: ${topicName} is premium with strong ecosystem while ${compName} offers affordable value. Choice depends on budget and needs.
 
 | Aspect | ${topicName} | ${compName} |
 | --- | --- | --- |
-| Philosophy | Premium, performance-centric, focused on ultimate experience | Balanced, mainstream, value-driven accessible premium |
-| Performance | High power, agile handling, optimized for enthusiasts | Solid, comfortable, stable, practical for daily use |
-| Features | Advanced tech, strong connectivity, driver assistance | Good tech, user-friendly interface, essential features |
-| Pricing | Higher tier, premium cost, strong resale value | Mid-range, better value, lower entry point |
-| Ecosystem | Highly integrated services, strong brand loyalty | Decent integration, broad service network, accessible |
-| Best For | Enthusiasts, tech lovers, performance seekers, pros | Everyday drivers, value seekers, families, budget conscious |
+| Philosophy | Premium, ecosystem-first | Value, accessibility first |
+| Performance | Fast, optimized | Adequate for daily tasks |
+| Features | Advanced integration | Core features |
+| Pricing | Higher | Lower |
+| Ecosystem | Very integrated | Less integrated |
+| Best For | Pros, students in ecosystem | Budget buyers, casual use |
 
-RULES: Do NOT write "table headers are fixed". Just give the table with real names.`
+RULES: Keep each cell under 10 words. Do NOT write "table headers are fixed" or "output must follow". Just give the table.`
       : "You are Chronicle vault assistant with memory. Reply concisely, friendly, helpful.";
 
-    let userPrompt = isResearch? `${raw} - Provide rich detailed comparison` : `User: ${raw}. Short memory: ${JSON.stringify(memory?.short||[])}. Reply concisely.`;
+    let userPrompt = isResearch? `${raw} - plain comparison` : `User: ${raw}. Short memory: ${JSON.stringify(memory?.short||[])}. Reply concisely.`;
 
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-20b",
       messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      temperature: 0.6,
-      max_tokens: isResearch? 1200 : 250,
+      temperature: 0.3,
+      max_tokens: isResearch? 800 : 200,
     });
 
     const reply = completion.choices[0]?.message?.content || "Hi!";
