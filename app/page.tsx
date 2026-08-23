@@ -1,134 +1,147 @@
 "use client"
 import { useState } from "react"
 
-function ParseResearch(text: string){
-  const thought = text.match(/Thought[:\-]?\s*([\s\S]*?)(?=Action|$)/i)?.[1]?.trim() || ""
-  const action = text.match(/Action[:\-]?\s*([\s\S]*?)(?=Observation|$)/i)?.[1]?.trim() || ""
-  const observation = text.match(/Observation[:\-]?\s*([\s\S]*?)(?=Final Answer|$)/i)?.[1]?.trim() || ""
-  const finalRaw = text.split(/Final Answer[:\-]?/i)[1] || text
+type Parsed = { thought:string, action:string, observation:string, finalText:string, table:string[][] }
 
-  // parse table rows with |
-  const lines = finalRaw.split("\n").filter(l=>l.includes("|"))
-  const rows = lines.filter(l=>!l.includes("---")).map(l=> l.split("|").map(c=>c.trim()).filter(Boolean))
+function parse(text: string): Parsed {
+  const get = (name: string) => {
+    const m = text.match(new RegExp(`${name}\\s*[:\\-]?\\s*([\\s\\S]*?)(?=(Action|Observation|Final Answer|\\bTHOUGHT|\\bACTION|\\bOBSERVATION|\\bFINAL ANSWER)\\b|$)`, "i"))
+    return m?.[1]?.trim() || ""
+  }
+  let thought = get("Thought")
+  let action = get("Action")
+  let observation = get("Observation")
+  let finalText = text.split(/Final Answer/i)[1]?.trim() || ""
 
-  return { thought, action, observation, rows }
+  // clean leading | | mess
+  const clean = (s:string)=> s.replace(/^\s*\|\s*/gm,"").replace(/\|\s*$/gm,"").trim()
+  thought = clean(thought); action = clean(action); observation = clean(observation)
+
+  // extract table rows
+  const lines = finalText.split("\n").filter(l=>l.trim().includes("|") || l.includes(" "))
+  let table: string[][] = []
+  // proper pipe table
+  const pipeLines = finalText.split("\n").filter(l=>l.includes("|"))
+  if(pipeLines.length>=2){
+    table = pipeLines.filter(l=>!l.match(/^\s*\|?\s*-+.*-+\s*\|?\s*$/)).map(l=>l.split("|").map(c=>c.trim()).filter(Boolean))
+  }
+  return { thought, action, observation, finalText, table }
 }
 
 export default function Home(){
-  const [topic,setTopic]=useState("")
-  const [competitor,setCompetitor]=useState("")
+  const [topic,setTopic]=useState("Motorola")
+  const [competitor,setCompetitor]=useState("Samsung")
   const [reply,setReply]=useState("")
   const [loading,setLoading]=useState(false)
-  const [chat,setChat]=useState("")
-  const [messages,setMessages]=useState<{role:string, text:string}[]>([])
+  const [chatInput,setChatInput]=useState("")
+  const [chats,setChats]=useState<{u:string,a:string}[]>([])
 
-  async function doResearch(){
+  async function runResearch(){
     if(!topic) return
     setLoading(true); setReply("")
-    const res = await fetch("/api/chat",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ message: `Topic: ${topic} vs Competitor: ${competitor}`, memory:{short:[], long:{facts:[]}} })
-    })
+    const res = await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:`Topic: ${topic} vs Competitor: ${competitor}`,memory:{short:[],long:{facts:[]}}})})
     const data = await res.json()
-    setReply(data.reply); setLoading(false)
+    setReply(data.reply || ""); setLoading(false)
   }
 
   async function sendChat(){
-    if(!chat) return
-    setMessages(m=>[...m,{role:"user", text:chat}])
-    const r = await fetch("/api/chat",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ message: chat, memory:{short:[], long:{facts:[]}} })
-    })
-    const d = await r.json()
-    setMessages(m=>[...m,{role:"ai", text:d.reply}])
-    setChat("")
+    const q = chatInput.trim(); if(!q) return
+    setChatInput("")
+    setChats(c=>[...c,{u:q,a:"..."}])
+    const res = await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,memory:{short:[],long:{facts:[]}}})})
+    const data = await res.json()
+    setChats(c=>{ const nc=[...c]; nc[nc.length-1].a = data.reply; return nc })
   }
 
-  const p = reply? ParseResearch(reply) : null
+  const p = reply? parse(reply) : null
 
   return (
-    <div className="min-h-screen bg-[#f8f6f2] text-black">
-      {/* Header */}
-      <div className="border-b-2 border-black bg-white sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="font-extrabold text-xl tracking-tight">CHRONICLE AI • SECOND BRAIN</div>
-          <div className="flex gap-3 text-xs font-bold">
-            <a href="/evaluation" className="bg-black text-white px-4 py-2 rounded-full">EVALUATION</a>
-            <a href="/tracing" className="bg-white border-2 border-black px-4 py-2 rounded-full">TRACING</a>
+    <div className="min-h-screen bg-[#fbf8f2] text-black selection:bg-black selection:text-white">
+      <header className="border-b-2 border-black bg-[#fbf8f2] sticky top-0 z-20">
+        <div className="max-w-[1280px] mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="font-extrabold text-[18px] tracking-tight">CHRONICLE AI • SECOND BRAIN</div>
+          <div className="flex gap-2">
+            <a href="/evaluation" className="bg-black text-white text-[12px] font-bold px-5 py-2.5 rounded-full">EVALUATION</a>
+            <a href="/tracing" className="bg-white border-2 border-black text-[12px] font-bold px-5 py-2.5 rounded-full">TRACING</a>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-6xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Research Input */}
-        <div className="lg:col-span-1 space-y-4">
-          <div className="bg-white rounded-[24px] border-2 border-black p-6">
-            <h2 className="font-extrabold text-sm tracking-widest">RESEARCH MODE</h2>
-            <input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Topic: e.g. Mahatma Gandhi" className="mt-4 w-full border-2 border-black rounded-full px-4 py-3 text-sm font-medium outline-none" />
-            <input value={competitor} onChange={e=>setCompetitor(e.target.value)} placeholder="Competitor: e.g. Narendra Modi" className="mt-3 w-full border-2 border-black rounded-full px-4 py-3 text-sm font-medium outline-none" />
-            <button onClick={doResearch} disabled={loading} className="mt-4 w-full bg-black text-white rounded-full py-3 font-extrabold text-sm disabled:opacity-50">
-              {loading?"RESEARCHING...":"Run Research"}
-            </button>
+      <main className="max-w-[1280px] mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
+        {/* LEFT */}
+        <div className="space-y-5 h-fit sticky top-[88px]">
+          <div className="bg-white border-2 border-black rounded-[20px] p-5">
+            <div className="text-[12px] font-extrabold tracking-[0.15em]">RESEARCH MODE</div>
+            <input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Motorola" className="mt-4 w-full border-2 border-black rounded-full px-4 py-3 text-[14px] font-medium outline-none bg-white" />
+            <input value={competitor} onChange={e=>setCompetitor(e.target.value)} placeholder="Samsung" className="mt-3 w-full border-2 border-black rounded-full px-4 py-3 text-[14px] font-medium outline-none bg-white" />
+            <button onClick={runResearch} disabled={loading} className="mt-4 w-full bg-black text-white rounded-full py-3.5 font-bold text-[14px] hover:bg-zinc-900 disabled:opacity-60">{loading?"Running LangGraph...":"Run Research"}</button>
+            {loading && <div className="mt-3 text-[11px] text-zinc-500 text-center animate-pulse">Planner → Recaller → Researcher×2 → Resolver → Evaluator → Librarian</div>}
           </div>
 
-          <div className="bg-[#0b0b0b] rounded-[24px] p-6 text-white">
-            <h3 className="font-bold text-sm">Chat</h3>
-            <div className="mt-4 space-y-3 max-h-[300px] overflow-auto">
-              {messages.map((m,i)=>(
-                <div key={i} className={`text-[13px] p-3 rounded-2xl ${m.role==="user"?"bg-white text-black ml-8":"bg-zinc-800 text-white mr-8"}`}>{m.text.slice(0,300)}</div>
+          <div className="bg-black rounded-[20px] p-5">
+            <div className="text-white text-[13px] font-bold">Chat</div>
+            <div className="mt-4 space-y-2 max-h-[280px] overflow-auto pr-1">
+              {chats.length===0 && <div className="text-zinc-500 text-[12px]">Say hi - fixed now</div>}
+              {chats.map((c,i)=>(
+                <div key={i} className="space-y-2">
+                  <div className="bg-zinc-800 text-white text-[12px] px-3 py-2 rounded-2xl rounded-bl-sm ml-2">{c.u}</div>
+                  <div className="bg-white text-black text-[12px] px-3 py-2 rounded-2xl rounded-br-sm mr-2">{c.a}</div>
+                </div>
               ))}
             </div>
             <div className="mt-4 flex gap-2">
-              <input value={chat} onChange={e=>setChat(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="hi" className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 text-sm outline-none" />
-              <button onClick={sendChat} className="bg-white text-black px-5 rounded-full font-bold text-sm">Send</button>
+              <input value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="hi" className="flex-1 bg-[#1a1a1a] border border-zinc-700 text-white rounded-full px-4 py-2.5 text-[13px] outline-none" />
+              <button onClick={sendChat} className="bg-white text-black px-5 rounded-full font-bold text-[13px]">Send</button>
             </div>
           </div>
         </div>
 
-        {/* Right Research Output */}
-        <div className="lg:col-span-2">
-          {!p &&!loading && <div className="bg-white border-2 border-dashed border-black/20 rounded-[24px] p-12 text-center text-zinc-500 font-medium">Enter Topic & Competitor and click Run Research<br/>You will get Thought / Action / Observation / Final Answer table</div>}
-          {loading && <div className="bg-white border-2 border-black rounded-[24px] p-12 text-center font-bold animate-pulse">Orchestrating 6 agents... Planner → Recaller → Researcher A/B → Resolver → Evaluator → Librarian</div>}
+        {/* RIGHT - LangGraph Output */}
+        <div className="space-y-4">
+          {!p &&!loading && <div className="bg-white border-2 border-dashed border-black/20 rounded-[20px] p-16 text-center text-[14px] text-zinc-500">Run research to see LangGraph Thought → Action → Observation → Final Answer</div>}
 
           {p && (
-            <div className="space-y-4">
-              {p.thought && (
-                <div className="bg-[#fff8c5] border-2 border-black rounded-[20px] p-5">
-                  <div className="text-[11px] font-extrabold tracking-widest">THOUGHT</div>
-                  <div className="mt-2 text-[13px] leading-6 font-medium">{p.thought}</div>
-                </div>
-              )}
-              {p.action && (
-                <div className="bg-[#d9e8ff] border-2 border-black rounded-[20px] p-5">
-                  <div className="text-[11px] font-extrabold tracking-widest">ACTION</div>
-                  <div className="mt-2 text-[13px] leading-6 font-medium whitespace-pre-wrap">{p.action}</div>
-                </div>
-              )}
-              {p.observation && (
-                <div className="bg-[#d1ffe0] border-2 border-black rounded-[20px] p-5">
-                  <div className="text-[11px] font-extrabold tracking-widest">OBSERVATION</div>
-                  <div className="mt-2 text-[13px] leading-6 font-medium">{p.observation}</div>
-                </div>
-              )}
-              <div className="bg-white border-2 border-black rounded-[20px] p-5 overflow-auto">
+            <>
+              <div className="bg-[#fff7b0] border-2 border-black rounded-[16px] p-5">
+                <div className="text-[11px] font-extrabold tracking-widest">THOUGHT</div>
+                <div className="mt-2 text-[13px] leading-[22px]">{p.thought || "Comparing core aspects..."}</div>
+              </div>
+              <div className="bg-[#dbe9ff] border-2 border-black rounded-[16px] p-5">
+                <div className="text-[11px] font-extrabold tracking-widest">ACTION</div>
+                <div className="mt-2 text-[13px] leading-[22px] whitespace-pre-wrap">{p.action || "Gather sales, feature, pricing, and review data"}</div>
+              </div>
+              <div className="bg-[#d1f4d9] border-2 border-black rounded-[16px] p-5">
+                <div className="text-[11px] font-extrabold tracking-widest">OBSERVATION</div>
+                <div className="mt-2 text-[13px] leading-[22px]">{p.observation}</div>
+              </div>
+
+              <div className="bg-white border-2 border-black rounded-[20px] p-5">
                 <div className="text-[11px] font-extrabold tracking-widest">FINAL ANSWER</div>
-                <div className="mt-4">
-                  <div className="grid gap-2">
-                    {p.rows.map((r,i)=>(
-                      <div key={i} className={`grid grid-cols-3 gap-3 text-[12px] p-3 rounded-xl ${i===0?"bg-black text-white font-extrabold":"bg-[#f8f6f2] border border-black/10"}`}>
-                        <div>{r[0]}</div><div>{r[1]}</div><div>{r[2]}</div>
+
+                {/* If table exists - show table like original perfect design */}
+                {p.table.length>0? (
+                  <div className="mt-4 space-y-2">
+                    <div className="grid grid-cols-3 gap-2 text-[11px] font-extrabold px-3 py-2 bg-black text-white rounded-xl">
+                      <div>{p.table[0]?.[0]||"Aspect"}</div><div>{p.table[0]?.[1]||"Topic"}</div><div>{p.table[0]?.[2]||"Competitor"}</div>
+                    </div>
+                    {p.table.slice(1).map((r,i)=>(
+                      <div key={i} className="grid grid-cols-3 gap-2 text-[12px] px-3 py-3 bg-[#fbf8f2] border border-black/10 rounded-xl">
+                        <div className="font-bold">{r[0]}</div><div>{r[1]}</div><div>{r[2]}</div>
                       </div>
                     ))}
+                    {/* Also show summary in black box */}
+                    <div className="mt-3 bg-black text-white text-[12px] leading-5 p-4 rounded-xl">
+                      {p.finalText.split("\n").filter(l=>!l.includes("|")).join(" ").slice(0,600)}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 bg-black text-white text-[12px] leading-[22px] p-5 rounded-[14px] whitespace-pre-wrap">{p.finalText}</div>
+                )}
               </div>
-            </div>
+            </>
           )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }
