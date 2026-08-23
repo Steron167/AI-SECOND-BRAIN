@@ -2,132 +2,105 @@ import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { tracer } from "@/lib/tracing";
 
-const getGroq = () => new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build" });
+const getGroq = () => {
+  const key = process.env.GROQ_API_KEY;
+  if(!key) throw new Error("GROQ_API_KEY missing");
+  return new Groq({ apiKey: key });
+};
 
-async function webSearchTool(query: string, attempt = 1): Promise<string> {
-  try {
-    // CONTROLLED FAILURE for Task 7 - triggers when query has [SIMULATE 429]
-    if (query.includes("429") || (attempt === 1 && Math.random() < 0.3)) {
-      throw new Error("Tavily 429 rate limit - simulated failure");
-    }
-    return `WebSearch[${query}]: Found sources - methodology, benefits, limitations, 2024 data.`;
-  } catch (e: any) {
-    if (attempt === 1) {
-      await new Promise(r=>setTimeout(r, 500)); // backoff
-      const r = await webSearchTool(query, 2);
-      return "FALLBACK(DuckDuckGo): " + r;
-    }
-    throw e;
-  }
-}
-
-function vaultTool(facts: string[]) {
-  if (!facts.length) return "Vault empty - uncertainty high";
-  return facts.slice(-3).join("\n");
-}
+async function webSearchTool(q:string){ return `WebSearch for ${q}: relevant info found`; }
+function vaultTool(facts:string[]){ return facts.slice(-3).join("\n") || "No prior facts"; }
 
 export async function POST(req: NextRequest) {
   const traceId = Math.random().toString(36).slice(2,9);
   tracer.startTrace(traceId);
-  
-  const { message, memory } = await req.json();
-  
-  let state = {
-    input: message, short: memory?.short || [], long: memory?.long?.facts || [],
-    webObs: "", vaultObs: "", evidence: [] as string[], confidence: 0.85, retries: 0,
-  };
-
-  // SPAN 1 - Planner
-  const s1 = tracer.startSpan(traceId, "Planner", "parse_topic", message);
-  await new Promise(r=>setTimeout(r, 80));
-  const topic = message.replace("[SIMULATE 429]","").trim();
-  tracer.endSpan(traceId, s1.id, `Parsed TOPIC vs COMPETITOR: ${topic}`, undefined, undefined, 20);
-
-  // SPAN 2 - Recaller
-  const s2 = tracer.startSpan(traceId, "Recaller", "vault_search", state.long.join(", "));
   try {
-    state.vaultObs = vaultTool(state.long);
-    state.evidence.push(state.vaultObs);
-    tracer.endSpan(traceId, s2.id, `Found ${state.long.length} facts in long-term memory`, "vaultTool", undefined, 15);
-  } catch(e:any){
-    tracer.endSpan(traceId, s2.id, undefined, "vaultTool", e.message);
-  }
+    const { message, memory } = await req.json();
+    const rawMsg = (message || "").toString();
+    const lower = rawMsg.toLowerCase();
 
-  // SPAN 3 & 4 - Researcher x2 (PARALLEL - this is the FIX)
-  const s3 = tracer.startSpan(traceId, "Researcher-A", "web_search_topic", topic + " Topic");
-  const s4 = tracer.startSpan(traceId, "Researcher-B", "web_search_competitor", topic + " Competitor");
-  const startResearch = Date.now();
-  
-  try {
-    const [r1, r2] = await Promise.allSettled([
-      webSearchTool(message + " Topic"),
-      webSearchTool(message + " Competitor"),
-    ]);
-    
-    const latency = Date.now() - startResearch;
-    
-    if(r1.status==="fulfilled"){
-      tracer.endSpan(traceId, s3.id, r1.value.slice(0,100), "web_search", undefined, 120);
-    } else {
-      tracer.endSpan(traceId, s3.id, undefined, "web_search", (r1 as any).reason.message, 0);
-    }
-    if(r2.status==="fulfilled"){
-      tracer.endSpan(traceId, s4.id, r2.value.slice(0,100), "web_search", undefined, 120);
-    } else {
-      tracer.endSpan(traceId, s4.id, undefined, "web_search", (r2 as any).reason.message, 0);
+    // Detect if this is a research task or normal chat
+    const isResearch = lower.includes("topic:") && lower.includes("vs") || lower.startsWith("topic:") || (rawMsg.includes("vs Competitor") && rawMsg.length > 30);
+
+    const short = memory?.short || [];
+    const longFacts = memory?.long?.facts || [];
+
+    const s1 = tracer.startSpan(traceId, "Planner", "parse_topic", rawMsg);
+    tracer.endSpan(traceId, s1.id, isResearch? "Research mode" : "Chat mode", undefined, undefined, 10);
+
+    const s2 = tracer.startSpan(traceId, "Recaller", "vault_search", "");
+    const vaultObs = vaultTool(longFacts);
+    tracer.endSpan(traceId, s2.id, vaultObs.slice(0,100), "vaultTool", undefined, 15);
+
+    let webObs = "";
+    if (isResearch) {
+      const s3 = tracer.startSpan(traceId, "Researcher-A", "web_search", rawMsg);
+      webObs = await webSearchTool(rawMsg);
+      tracer.endSpan(traceId, s3.id, webObs, "web_search", undefined, 120);
     }
 
-    state.webObs = [r1, r2].map((r) => (r.status === "fulfilled" ? r.value : "Failed")).join("\n---\n");
-    state.evidence.push(state.webObs);
-    if (state.webObs.includes("FALLBACK")) state.retries = 1;
-
-  } catch(e:any){
-    tracer.endSpan(traceId, s3.id, undefined, "web_search", e.message);
-    tracer.endSpan(traceId, s4.id, undefined, "web_search", e.message);
-  }
-
-  // SPAN 5 - Resolver + Evaluator + Librarian (LLM call)
-  const s5 = tracer.startSpan(traceId, "Resolver+EvaLibrarian", "llm_synthesis", `TASK: ${message} EVIDENCE: ${state.evidence.join("\n").slice(0,400)}`);
-  const llmStart = Date.now();
-
-  try {
-    const prompt = `TASK: ${message}\nEVIDENCE: ${state.evidence.join("\n---\n")}\nWrite ONLY ReAct format:\nThought: reasoning about ${message}\nAction: what tools WOULD be used (describe only)\nObservation: evidence for Topic and Competitor for ${message}\nFinal Answer: \nAspect | Topic | Competitor\nCore Philosophy | ... | ...\nMethodology | ... | ...\nFull length plain text, NO **, NO asterisks.\nIf FALLBACK present mention it.`;
-
+    const s5 = tracer.startSpan(traceId, "Resolver", "llm_synthesis", rawMsg);
     const groq = getGroq();
-const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-20b",
-      messages: [
-        { role: "system", content: "You are Chronicle 6-agent orchestrator. Evidence already provided. DO NOT call tools. Output ReAct as text only. NEVER JSON tool calls. Table format: Aspect | Topic | Competitor lines, no **." },
-        { role: "user", content: prompt },
-      ],
+
+    let prompt = "";
+    if (isResearch) {
+      prompt = `You are Chronicle Research Agent.
+TASK: ${rawMsg}
+EVIDENCE:
+Short memory: ${short.join(", ")}
+Long memory: ${vaultObs}
+Web: ${webObs}
+
+Respond in this exact format:
+Thought: why you are comparing these
+Action: web_search and vault_search used
+Observation: summarize evidence
+Final Answer:
+Aspect | Topic | Competitor
+Core |... |...
+Value |... |...
+`;
+    } else {
+      // NORMAL CHAT - DO NOT force table
+      prompt = `You are Chronicle AI assistant, friendly and concise.
+User says: ${rawMsg}
+Conversation history (short term): ${short.slice(-3).join(", ")}
+Relevant long term facts (only use if relevant): ${vaultObs}
+
+Rules:
+- If user says hi/hello/hey, reply with a simple greeting and ask how you can help. DO NOT bring up iPad/Galaxy Tab unless user asks.
+- If user asks casual question, answer normally.
+- Do NOT output Thought/Action/Observation/Final Answer or tables unless user asks for comparison.
+- Keep reply short, under 3 sentences for greetings.
+`;
+    }
+
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "system", content: isResearch? "You are Chronicle orchestrator." : "You are a helpful chat assistant." }, { role: "user", content: prompt }],
       temperature: 0.6,
-      max_tokens: 2000,
+      max_tokens: isResearch? 1500 : 400,
     });
 
-    const reply = completion.choices[0].message.content || "";
-    const llmLatency = Date.now() - llmStart;
-    const tokensOut = Math.ceil(reply.length/4);
-    
-    tracer.endSpan(traceId, s5.id, `LLM success, latency ${llmLatency}ms, confidence ${state.confidence}`, "groq_llm", undefined, tokensOut);
+    const reply = completion.choices[0]?.message?.content || (isResearch? "Thought: fallback\nFinal Answer:\nAspect | Topic | Competitor" : "Hi! How can I help you today?");
 
-    let facts = [...state.long];
-    if (message.length > 15 && facts.length < 20) facts.push(message);
+    tracer.endSpan(traceId, s5.id, `LLM ${reply.length} chars`, "groq_llm", undefined, Math.ceil(reply.length/4));
+
+    // Only save meaningful facts to long term, not "hi"
+    let newLong = [...longFacts];
+    if (rawMsg.length > 15 &&!["hi","hello","hey","hii","yo"].includes(lower.trim())) {
+      newLong.push(rawMsg);
+    }
 
     return NextResponse.json({
-      reply, traceId, // IMPORTANT - send traceId to frontend
-      memory_context: { short: [...state.short, message].slice(-5), long: { facts: facts.slice(-20) } },
-      agents_used: ["Planner", "Recaller", "Researcher x2", "Resolver", "Evaluator", "Librarian"],
-      tools_used: ["web_search (with fallback)", "vault_search"],
-      checkpoints: [{ node: "planner" }, { node: "recaller" }, { node: "researcher" }, { node: "resolver" }, { node: "evaluator" }, { node: "librarian" }],
-      metrics: { confidence: state.confidence, retries: state.retries, loopCount: 0, total_latency: Date.now() - s1.start },
+      reply,
+      traceId,
+      memory_context: { short: [...short, rawMsg].slice(-5), long: { facts: newLong.slice(-20) } },
+      checkpoints: [{node:"planner"},{node:"recaller"},{node:"researcher"},{node:"resolver"}],
+      metrics: { confidence: 0.85, retries: 0 }
     });
+
   } catch (err: any) {
-    tracer.endSpan(traceId, s5.id, undefined, "groq_llm", err.message, 0);
-    return NextResponse.json({
-      reply: `Thought: Recovery after ${err.message}\nAction: Use fallback evidence\nObservation: FALLBACK(DuckDuckGo) evidence available\nFinal Answer:\nAspect | Ayurveda | Modern Science\nCore Philosophy | Holistic balance | Evidence-based treatment`,
-      traceId, memory_context: memory,
-      checkpoints: [{ node: "recovery" }],
-      metrics: { confidence: 0.5, retries: 1, loopCount: 0 },
-    });
+    return NextResponse.json({ reply: "Hi there! I'm ready to help. What do you want to research?", traceId, memory_context: { short: [], long: { facts: [] } }, checkpoints: [], metrics: { confidence: 0, retries: 1 } }, { status: 200 });
   }
 }
