@@ -1,2 +1,24 @@
-export type Span = { id:string; agent:string; operation:string; start:number; end?:number; latency?:number; prompt?:string; decision?:string; tool?:string; tokens_in?:number; tokens_out?:number; error?:string; status:"running"|"ok"|"failed"; parentId?:string }
-class Tracer { private m: Map<string, any[]> = new Map(); startTrace(id:string){this.m.set(id,[])} getAllTraces(){return Array.from(this.m.entries()).map(([id,spans])=>({id,spans}))} getTrace(id:string){return this.m.get(id)||[]} startSpan(tid:string, agent:string, op:string, p?:string, par?:string){ const s:any={id:Math.random().toString(36).slice(2,8),agent,operation:op,start:Date.now(),prompt:p,status:"running",parentId:par}; this.m.get(tid)?.push(s); return s} endSpan(tid:string, sid:string, d?:string, tool?:string, e?:string, to?:number){ const s=this.m.get(tid)?.find(x=>x.id===sid); if(s){s.end=Date.now(); s.latency=s.end-s.start; s.decision=d; s.tool=tool; s.error=e; s.tokens_out=to; s.status=e?"failed":"ok"}} diagnose(tid:string){ const spans=this.getTrace(tid); const failed=spans.filter((s:any)=>s.status==="failed"); const slow=spans.filter((s:any)=>(s.latency||0)>2000); let rc="none", fix="none"; let imp:any={}; if(failed.some((s:any)=>s.error?.includes("429"))){rc="Tool rate-limit: web_search 429 - no cache + no backoff"; fix="Added cache + exponential backoff + fallbackTool. Before 4.2s/3 retries/2 errors/60% success. After 0.82s/0 retries/0 errors/100%"; imp={before_latency:"4.2s",after_latency:"0.82s",before_retries:3,after_retries:0,before_errors:2,after_errors:0,before_success:"60%",after_success:"100%"}} else if(slow.length>2){rc="Sequential researcher calls blocking"; fix="Parallelized with Promise.all"; imp={before_latency:"3.8s",after_latency:"1.1s"}} return{rootCause:rc,fix,improvement:imp,failed,slow,totalSpans:spans.length}} } export const tracer=new Tracer();
+type Span = { id: string, agent: string, op: string, input: string, output: string, tool?: string, latency: number, ts: number }
+type Trace = { id: string, spans: Span[], start: number }
+
+const traces = new Map<string, Trace>();
+
+export const tracer = {
+  startTrace(id: string) {
+    traces.set(id, { id, spans: [], start: Date.now() });
+  },
+  startSpan(traceId: string, agent: string, op: string, input: string) {
+    const span: any = { id: Math.random().toString(36).slice(2,6), agent, op, input, output: "...", latency: 0, ts: Date.now() };
+    const t = traces.get(traceId);
+    if (t) t.spans.push(span);
+    return span;
+  },
+  endSpan(traceId: string, spanId: string, output: string, tool?: string, _a?: any, latency?: number) {
+    const t = traces.get(traceId);
+    if (!t) return;
+    const s = t.spans.find(s=>s.id===spanId);
+    if (s) { s.output = output; s.tool = tool; s.latency = latency||0; }
+  },
+  getTrace(id: string){ return traces.get(id); },
+  getAll(){ return Array.from(traces.values()).slice(-20).reverse(); }
+};

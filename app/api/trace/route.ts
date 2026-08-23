@@ -1,21 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { tracer } from "@/lib/tracing";
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const traceId = searchParams.get("traceId") || "last";
-  if (traceId === "last") {
-    const all = tracer.getAllTraces();
-    if (!all.length) {
-      return NextResponse.json({ traceId: "none", spans: [], diagnosis: { rootCause: "no trace yet", fix: "run query first", improvement: {}, failed: [], slow: [], totalSpans: 0 } });
-    }
-    const last = all[all.length - 1];
-    return NextResponse.json({ traceId: last.id, spans: last.spans, diagnosis: tracer.diagnose(last.id) });
+export async function GET(req: NextRequest){
+  const id = req.nextUrl.searchParams.get("id");
+  if(id){
+    return NextResponse.json({ trace: tracer.getTrace(id) });
   }
-  return NextResponse.json({ traceId, spans: tracer.getTrace(traceId), diagnosis: tracer.diagnose(traceId) });
-}
-
-export async function POST(req: Request) {
-  const body = await req.json();
-  return NextResponse.json(tracer.diagnose(body.traceId));
+  return NextResponse.json({ traces: tracer.getAll() });
 }
