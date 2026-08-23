@@ -28,6 +28,7 @@ export default function Page() {
     const it = setInterval(() => { setActiveNode(steps[i]); i = (i+1)%6 }, 350)
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: `Topic: ${topic} vs Competitor: ${competitor || "general"} - plain comparison`, memory }) })
+      if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       clearInterval(it)
       setActiveNode("done")
@@ -36,26 +37,30 @@ export default function Page() {
       setCheckpoints(data.checkpoints || [])
       setMemory(data.memory_context)
       localStorage.setItem("chronicle_memory", JSON.stringify(data.memory_context))
-    } catch {}
-    clearInterval(it)
+      setChats(c => [...c, {role:"user", text:`Research: ${topic} vs ${competitor}`}, {role:"ai", text:data.reply}])
+    } catch(e:any){ alert("Research failed: "+e.message); clearInterval(it); }
     setLoading(false)
   }
 
   async function send() {
     if (!input.trim()) return
-    const nc = [...chats, { role: "user" as const, text: input }]
+    const userMsg = input
+    const nc = [...chats, { role: "user" as const, text: userMsg }]
     setChats(nc)
     setInput("")
     setLoading(true)
     try {
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: input, memory }) })
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: userMsg, memory }) })
+      if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       setChats([...nc, { role: "ai", text: data.reply }])
       setMeta(data)
       setCheckpoints(data.checkpoints || [])
       setMemory(data.memory_context)
       localStorage.setItem("chronicle_memory", JSON.stringify(data.memory_context))
-    } catch {}
+    } catch(e:any){
+      setChats([...nc, {role:"ai", text:"ERROR: "+e.message+" - Check Vercel Env GROQ_API_KEY set"}])
+    }
     setLoading(false)
   }
 
@@ -66,28 +71,13 @@ export default function Page() {
     return blocks.map((block, idx) => {
       const l = block.toLowerCase()
       if (l.includes("thought:")) {
-        return (
-          <div key={idx} className="mb-5 rounded-2xl bg-[#fff7ed] border-2 border-orange-200 p-5">
-            <div className="text-[12px] font-extrabold tracking-widest text-orange-700 mb-2">THOUGHT</div>
-            <div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{cleanCell(block.replace(/Thought:/i,""))}</div>
-          </div>
-        )
+        return (<div key={idx} className="mb-5 rounded-2xl bg-[#fff7ed] border-2 border-orange-200 p-5"><div className="text-[12px] font-extrabold tracking-widest text-orange-700 mb-2">THOUGHT</div><div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{cleanCell(block.replace(/Thought:/i,""))}</div></div>)
       }
       if (l.includes("action:")) {
-        return (
-          <div key={idx} className="mb-5 rounded-2xl bg-[#eff6ff] border-2 border-blue-200 p-5">
-            <div className="text-[12px] font-extrabold tracking-widest text-blue-700 mb-2">ACTION</div>
-            <div className="text-[14px] font-mono font-semibold leading-7 text-black bg-white p-3 rounded-xl border border-blue-100 whitespace-pre-wrap break-words">{cleanCell(block.replace(/Action:/i,""))}</div>
-          </div>
-        )
+        return (<div key={idx} className="mb-5 rounded-2xl bg-[#eff6ff] border-2 border-blue-200 p-5"><div className="text-[12px] font-extrabold tracking-widest text-blue-700 mb-2">ACTION</div><div className="text-[14px] font-mono font-semibold leading-7 text-black bg-white p-3 rounded-xl border border-blue-100 whitespace-pre-wrap break-words">{cleanCell(block.replace(/Action:/i,""))}</div></div>)
       }
       if (l.includes("observation:")) {
-        return (
-          <div key={idx} className="mb-5 rounded-2xl bg-[#f0fdf4] border-2 border-green-200 p-5">
-            <div className="text-[12px] font-extrabold tracking-widest text-green-700 mb-2">OBSERVATION</div>
-            <div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{cleanCell(block.replace(/Observation:/i,""))}</div>
-          </div>
-        )
+        return (<div key={idx} className="mb-5 rounded-2xl bg-[#f0fdf4] border-2 border-green-200 p-5"><div className="text-[12px] font-extrabold tracking-widest text-green-700 mb-2">OBSERVATION</div><div className="text-[14px] font-medium leading-7 text-black whitespace-pre-wrap break-words">{cleanCell(block.replace(/Observation:/i,""))}</div></div>)
       }
       if (l.includes("final answer:")) {
         const content = block.replace(/Final Answer:/i,"").trim()
@@ -102,13 +92,7 @@ export default function Page() {
                   if (raw.length < 2) return null
                   if (raw.every((c:string)=>/^[-:\s]+$/.test(c))) return null
                   const cells = raw.map((c:string)=>cleanCell(c))
-                  return (
-                    <div key={li} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0,1fr))` }}>
-                      {cells.map((cell:string, ci:number)=>(
-                        <div key={ci} className={`px-3 py-2.5 rounded-xl text-[13px] border leading-5 break-words ${ci===0? "bg-zinc-800 text-white border-zinc-700 font-extrabold" : "bg-white text-black border-white font-medium"}`}>{cell}</div>
-                      ))}
-                    </div>
-                  )
+                  return (<div key={li} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0,1fr))` }}>{cells.map((cell:string, ci:number)=>(<div key={ci} className={`px-3 py-2.5 rounded-xl text-[13px] border leading-5 break-words ${ci===0? "bg-zinc-800 text-white border-zinc-700 font-extrabold" : "bg-white text-black border-white font-medium"}`}>{cell}</div>))}</div>)
                 }
                 if (!line.trim()) return <div key={li} className="h-2" />
                 return <div key={li} className="text-[15px] font-medium leading-8 text-zinc-100 whitespace-pre-wrap break-words">{cleanCell(line)}</div>
@@ -124,10 +108,7 @@ export default function Page() {
 
   const Node = ({ id, title, sub }: any) => (
     <div className={`rounded-[14px] p-3 border-2 flex items-center gap-3 ${activeNode===id? "bg-white text-black border-white" : "bg-[#1e1e1e] border-[#2c2c2c] text-white"}`}>
-      <div className="flex-1">
-        <div className="text-[11px] font-extrabold tracking-wide">{title}</div>
-        <div className="text-[10px] mt-0.5 text-zinc-400">{sub}</div>
-      </div>
+      <div className="flex-1"><div className="text-[11px] font-extrabold tracking-wide">{title}</div><div className="text-[10px] mt-0.5 text-zinc-400">{sub}</div></div>
       {activeNode===id && <div className="w-2 h-2 bg-[#00ff66] rounded-full animate-pulse" />}
     </div>
   )
@@ -171,25 +152,38 @@ export default function Page() {
           </div>
         </div>
       </div>
-      <div className="flex-1 min-w-0 flex flex-col">
-        <div className="p-6 md:p-8 max-w-[900px] mx-auto w-full">
+      <div className="flex-1 min-w-0 flex flex-col h-screen">
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 max-w-[900px] mx-auto w-full space-y-6">
           <h1 className="text-[28px] font-extrabold text-black">Research Intelligence</h1>
-          <div className="mt-6 bg-white rounded-[24px] border-2 border-black/10 shadow-xl p-1.5">
+          <div className="bg-white rounded-[24px] border-2 border-black/10 shadow-xl p-1.5">
             <div className="bg-[#f6f4f1] rounded-[18px] p-5">
               <div className="grid md:grid-cols-[1.3fr_1fr] gap-3">
-                <div><label className="text-[11px] font-bold text-zinc-500 ml-1 tracking-widest">TOPIC</label><input value={topic} onChange={e=>setTopic(e.target.value)} className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 outline-none" /></div>
-                <div><label className="text-[11px] font-bold text-zinc-500 ml-1 tracking-widest">VS COMPETITOR</label><input value={competitor} onChange={e=>setCompetitor(e.target.value)} className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 outline-none" /></div>
+                <div><label className="text-[11px] font-bold text-zinc-500 ml-1 tracking-widest">TOPIC</label><input value={topic} onChange={e=>setTopic(e.target.value)} placeholder="e.g. Ipad" className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 outline-none" /></div>
+                <div><label className="text-[11px] font-bold text-zinc-500 ml-1 tracking-widest">VS COMPETITOR</label><input value={competitor} onChange={e=>setCompetitor(e.target.value)} placeholder="e.g. Galaxy Tab" className="w-full mt-1 bg-white rounded-full px-5 py-3.5 text-[15px] font-semibold text-black border-2 border-zinc-200 outline-none" /></div>
               </div>
               <button onClick={trackResearch} disabled={loading} className="w-full mt-4 bg-black text-white py-4 rounded-full font-extrabold text-[15px]">{loading? "MULTI AGENTS RUNNING..." : "Run Research"}</button>
             </div>
           </div>
-          {result && <div className="mt-6 bg-white rounded-[24px] border-2 border-black shadow-xl overflow-hidden"><div className="px-6 py-4 bg-black text-white text-[11px] font-extrabold tracking-widest">FINAL ANSWER</div><div className="p-6 bg-[#fcfaf7]">{renderReAct(result)}</div></div>}
+
+          {/* CHAT HISTORY - THIS WAS MISSING */}
+          <div className="space-y-4">
+            {chats.map((c,i)=>(
+              <div key={i} className={`rounded-[20px] p-5 border-2 ${c.role==="user"?"bg-white border-black text-black ml-12":"bg-[#fcfaf7] border-black/10 text-black"}`}>
+                <div className="text-[10px] font-bold tracking-widest mb-2 opacity-60">{c.role.toUpperCase()}</div>
+                <div className="text-[14px] leading-7 whitespace-pre-wrap break-words">{c.role==="user"? c.text : renderReAct(c.text)}</div>
+              </div>
+            ))}
+            {loading && <div className="text-[12px] font-bold animate-pulse">Agents thinking... {activeNode}</div>}
+          </div>
+
+          {result &&!chats.length && <div className="bg-white rounded-[24px] border-2 border-black shadow-xl overflow-hidden"><div className="px-6 py-4 bg-black text-white text-[11px] font-extrabold tracking-widest">FINAL ANSWER</div><div className="p-6 bg-[#fcfaf7]">{renderReAct(result)}</div></div>}
         </div>
         <div className="p-4 sticky bottom-0 bg-[#f8f6f2]/95 backdrop-blur border-t">
           <div className="max-w-[700px] mx-auto bg-white border-2 border-black rounded-full p-1.5 flex gap-2 shadow-xl">
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask vault..." className="flex-1 bg-transparent px-6 outline-none text-[15px] font-medium text-black" />
-            <button onClick={send} className="bg-black text-white px-7 py-3 rounded-full text-[14px] font-extrabold">Send</button>
+            <button onClick={send} disabled={loading} className="bg-black text-white px-7 py-3 rounded-full text-[14px] font-extrabold">{loading?"...":"Send"}</button>
           </div>
+          <div className="text-center mt-2"><a href="/tracing" className="text-[11px] font-bold text-zinc-500 underline">Open /tracing for Task 7</a></div>
         </div>
       </div>
     </div>
